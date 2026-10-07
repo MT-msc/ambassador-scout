@@ -8,7 +8,7 @@ import re
 import requests
 
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
-# Wikimedia requires clients to identify themselves with a way to reach the owner.
+
 USER_AGENT = "AmbassadorScout/0.1 (https://github.com/MT-msc/ambassador-scout)"
 TIMEOUT = 10
 
@@ -37,12 +37,10 @@ def _language_titles(sitelinks: dict) -> dict[str, str]:
     """{"enwiki": {"title": "Stray Kids", ...}, ...} -> {"en": "Stray Kids", ...}"""
     titles = {}
     for key, link in sitelinks.items():
-        # TODO 1: skip keys that don't end in "wiki" (e.g. "enwikiquote")
-        #         or that are in NON_LANGUAGE_WIKIS
-
-        # TODO 2: turn the key into a language code and store the title:
-        #         "enwiki" -> "en",  "zh_yuewiki" -> "zh-yue"
-        pass
+        if not key.endswith("wiki") or key in NON_LANGUAGE_WIKIS:
+            continue
+        lang = key[:-4].replace("_", "-")  # "enwiki" -> "en", "zh_yuewiki" -> "zh-yue"
+        titles[lang] = link["title"]
     return titles
 
 
@@ -58,29 +56,54 @@ def resolve_star(name: str) -> dict:
     if re.fullmatch(r"Q\d+", name):
         star_id = name
     else:
-        # TODO 3: search Wikidata with action "wbsearchentities"
-        #         (search=name, language="en", type="item", limit=10)
-        #         and keep the list under the "search" key
-        results = ...
+        results = _wikidata_get({
+            "action": "wbsearchentities",
+            "search": name,
+            "language": "en",
+            "type": "item",
+            "limit": 10,
+        })["search"]
 
-        # TODO 4: keep only results whose description contains a STAR_KEYWORD
-        stars = ...
+        stars = [
+            result for result in results
+            if any(keyword in result.get("description", "").lower()
+                   for keyword in STAR_KEYWORDS)
+        ]
 
-        # TODO 5: decide which star it is
-        #   - no stars                                      -> return not_found
-        #   - exactly one star whose label == name (any case) -> use its "id"
-        #   - only one star in total                        -> use its "id"
-        #   - otherwise                                     -> return ambiguous (max 5 candidates)
-        ...
+        if not stars:
+            return {"status": "not_found", "query": name}
+
+        matching_stars = [
+            star for star in stars
+            if star.get("label", "").casefold() == name.casefold()
+        ]
+        if len(matching_stars) == 1:
+            star_id = matching_stars[0]["id"]
+        elif len(stars) == 1:
+            star_id = stars[0]["id"]
+        else:
+            # Only the fields the model needs to tell candidates apart.
+            candidates = [
+                {"id": star["id"], "label": star.get("label", ""),
+                 "description": star.get("description", "")}
+                for star in stars[:5]
+            ]
+            return {"status": "ambiguous", "query": name, "candidates": candidates}
 
     # Step 2: ID -> label, description and sitelinks
     data = _wikidata_get({"action": "wbgetentities", "ids": star_id,
                           "props": "labels|descriptions|sitelinks", "languages": "en|mul"})
 
-    # TODO 6: a bad ID comes back as {"error": ...} -> return not_found
+    if "error" in data:
+        return {"status": "not_found", "query": name}
 
     entity = data["entities"][star_id]
 
-    # TODO 7: build and return the "found" dict.
-    #         label: use labels["en"]["value"], or labels["mul"]["value"] if there's no "en"
-    ...
+    labels = entity.get("labels", {})
+    return {
+        "status": "found",
+        "star_id": star_id,
+        "label": labels.get("en", labels.get("mul", {})).get("value", name),
+        "description": entity.get("descriptions", {}).get("en", {}).get("value", ""),
+        "language_titles": _language_titles(entity.get("sitelinks", {})),
+    }
