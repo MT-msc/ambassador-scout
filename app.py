@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from datetime import date
 from pathlib import Path
@@ -112,7 +113,8 @@ class ChatResponse(BaseModel):
 
 @app.get("/")
 def index():
-    return FileResponse(Path(__file__).parent / "index.html")
+    # no-cache: browsers re-check for a new version, so each deploy shows up right away.
+    return FileResponse(Path(__file__).parent / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -147,4 +149,9 @@ def clear(session_id: str | None = None):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # Cloud Run sets PORT and needs the server reachable from outside the container.
+    # Locally there is no PORT, so stay on 127.0.0.1:8000 (not exposed to the network).
+    if "PORT" in os.environ:
+        uvicorn.run(app, host="0.0.0.0", port=int(os.environ["PORT"]))
+    else:
+        uvicorn.run(app, host="127.0.0.1", port=8000)

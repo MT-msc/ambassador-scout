@@ -1,0 +1,9 @@
+# Rebuilt inside the image from uv.lock, so never copy the local one.
+.venv/
+__pycache__/
+*.py[cod]
+
+# Secrets and local clutter stay out of the image.
+.env
+.git/
+.DS_Store
