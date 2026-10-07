@@ -3,11 +3,15 @@
 These return plain Python data. tools.py turns it into JSON for the model.
 """
 
+import calendar
 import re
+from datetime import date
+from urllib.parse import quote
 
 import requests
 
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+PAGEVIEWS_API = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article"
 
 USER_AGENT = "AmbassadorScout/0.1 (https://github.com/MT-msc/ambassador-scout)"
 TIMEOUT = 10
@@ -39,7 +43,7 @@ def _language_titles(sitelinks: dict) -> dict[str, str]:
     for key, link in sitelinks.items():
         if not key.endswith("wiki") or key in NON_LANGUAGE_WIKIS:
             continue
-        lang = key[:-4].replace("_", "-")  # "enwiki" -> "en", "zh_yuewiki" -> "zh-yue"
+        lang = key[:-4].replace("_", "-")
         titles[lang] = link["title"]
     return titles
 
@@ -107,3 +111,48 @@ def resolve_star(name: str) -> dict:
         "description": entity.get("descriptions", {}).get("en", {}).get("value", ""),
         "language_titles": _language_titles(entity.get("sitelinks", {})),
     }
+
+
+def _last_complete_months(count: int) -> list[str]:
+    """The last `count` finished calendar months, oldest first: ["2025-10", ..., "2026-09"]."""
+    today = date.today()
+    year, month = today.year, today.month
+    months = []
+    for _ in range(count):
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+        months.append(f"{year}-{month:02d}")
+    return months[::-1]
+
+
+def get_monthly_pageviews(lang: str, title: str, months: int = 12) -> list[dict]:
+    """Human pageviews of one Wikipedia article over the last `months` finished months.
+
+    `title` should come from resolve_star's language_titles, never from user text.
+    Returns [{"month": "2025-10", "views": 90303}, ...], oldest first, one entry per
+    month. Months with no data count as 0 views (e.g. before the article existed).
+    Raises on HTTP errors other than 404 (e.g. 429, 500).
+    """
+    month_keys = _last_complete_months(months)
+    # The API sums only the days inside the range, so it must run from the 1st of
+    # the first month to the last day of the last month, or edge months come back partial.
+    last_year, last_month = map(int, month_keys[-1].split("-"))
+    last_day = calendar.monthrange(last_year, last_month)[1]
+    start = month_keys[0].replace("-", "") + "01"
+    end = month_keys[-1].replace("-", "") + f"{last_day:02d}"
+    # Spaces become underscores, then encode the rest ("/", "?", non-Latin letters).
+    article = quote(title.replace(" ", "_"), safe="")
+    url = f"{PAGEVIEWS_API}/{lang}.wikipedia/all-access/user/{article}/monthly/{start}/{end}"
+
+    response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+    if response.status_code == 404:
+        # The API's 404 means "no data in this range", not necessarily a bad title.
+        items = []
+    else:
+        response.raise_for_status()
+        items = response.json()["items"]
+
+    # "2025100100" -> "2025-10". Keep only the months we asked for.
+    views = {f"{item['timestamp'][:4]}-{item['timestamp'][4:6]}": item["views"] for item in items}
+    return [{"month": key, "views": views.get(key, 0)} for key in month_keys]
