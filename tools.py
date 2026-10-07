@@ -11,43 +11,8 @@ import requests
 from wiki_client import (CATEGORY_QUERIES, find_candidates, get_monthly_pageviews,
                          get_pageviews_bulk, resolve_star)
 
-# Open-Meteo is free and needs no API key.
-GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
-
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    try:
-        places = requests.get(GEOCODE_URL, params={"name": location, "count": 1}, timeout=10).json()
-        if not places.get("results"):
-            return json.dumps({"error": f"City '{location}' was not found."})
-        place = places["results"][0]
-
-        current = requests.get(
-            FORECAST_URL,
-            params={
-                "latitude": place["latitude"],
-                "longitude": place["longitude"],
-                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
-                "temperature_unit": "fahrenheit",
-                "wind_speed_unit": "mph",
-            },
-            timeout=10,
-        ).json()["current"]
-    except requests.RequestException as e:
-        # The model cannot see an exception. Return something it can reason about.
-        return json.dumps({"error": f"Weather service failed: {e}"})
-
-    return json.dumps({
-        "location": place["name"],
-        "temp_f": current["temperature_2m"],
-        "humidity": current["relative_humidity_2m"],
-        "wind_mph": current["wind_speed_10m"],
-    })
-
-
-# --- Shared helpers for the Ambassador Scout tools ---
+# --- Shared helpers ---
 
 DATA_NOTE = (
     "Wikipedia pageviews measure public attention (human readers), "
@@ -398,20 +363,6 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_weather",
-            "description": "Get the current weather (temperature, humidity, wind) for a city.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string", "description": "City name, e.g. 'New York'"},
-                },
-                "required": ["location"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "buzz_momentum",
             "description": (
                 "Measure whether a celebrity's or group's public attention is Rising, Peaking, "
@@ -530,7 +481,6 @@ TOOLS = [
 
 # What the harness runs: tool name -> Python function.
 TOOL_MAP = {
-    "get_weather": get_weather,
     "buzz_momentum": buzz_momentum,
     "fan_geography": fan_geography,
     "rising_star_finder": rising_star_finder,

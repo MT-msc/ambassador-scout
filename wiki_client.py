@@ -24,6 +24,11 @@ TIMEOUT = 10
 # A search result is probably a star if its description mentions one of these.
 STAR_KEYWORDS = ("singer", "rapper", "actor", "actress", "band", "group", "musician",
                  "idol", "songwriter", "entertainer", "model", "dancer", "duo", "personality")
+# ...unless it describes a work by a star ("1994 single by Canadian country band"), or an
+# adult performer, who is out of scope for brand deals. Whole words only, so
+# "singer-songwriter" doesn't count as "song".
+NOT_A_STAR = re.compile(r"\b(song|single|album|mixtape|soundtrack|EP|pornographic)\b",
+                        re.IGNORECASE)
 
 # Sitelink keys that end in "wiki" but are not a language edition of Wikipedia.
 NON_LANGUAGE_WIKIS = {"commonswiki", "specieswiki", "metawiki", "wikidatawiki",
@@ -77,6 +82,7 @@ def resolve_star(name: str) -> dict:
             result for result in results
             if any(keyword in result.get("description", "").lower()
                    for keyword in STAR_KEYWORDS)
+            and not NOT_A_STAR.search(result.get("description", ""))
         ]
 
         if not stars:
