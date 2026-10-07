@@ -440,7 +440,9 @@ TOOLS = [
                 "mainstream (so likely cheaper to sign). Use it when the user asks for rising, "
                 "emerging, underrated or affordable talent, or who to sign before they blow "
                 "up. Returns ranked prospects with growth %, plus which stars were left out "
-                "for being already mainstream or too new to judge. Takes several seconds."
+                "for being already mainstream or too new to judge. Takes several seconds. "
+                "Covers K-pop only: for other artists, check named candidates with "
+                "buzz_momentum and fan_geography instead."
             ),
             "parameters": {
                 "type": "object",
